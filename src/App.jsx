@@ -1,6 +1,7 @@
-import { useState, useRef, useCallback, useMemo } from 'react'
+// import { useState, useRef, useCallback, useMemo } from 'react'
 import './App.css'
 import { createEngine } from './engine/core.js'
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 
 const TOTAL_ROWS = 50
 const TOTAL_COLS = 50
@@ -19,6 +20,71 @@ export default function App() {
   const cellInputRef = useRef(null)
 
   const forceRerender = useCallback(() => setVersion(v => v + 1), [])
+  const [sortConfig, setSortConfig] = useState({
+    col: null,
+    order: null // 'asc' | 'desc' | null
+  })
+
+
+  const [filterConfig, setFilterConfig] = useState({
+    col: null,
+    value: null
+  })
+
+
+  // 🔥 LOCAL STORAGE SAVE
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      const data = []
+
+      for (let r = 0; r < engine.rows; r++) {
+        for (let c = 0; c < engine.cols; c++) {
+          const cell = engine.getCell(r, c)
+          if (cell.raw) {
+            data.push({ r, c, value: cell.raw })
+          }
+        }
+      }
+
+      localStorage.setItem("sheet", JSON.stringify(data))
+    }, 500)
+
+    return () => clearTimeout(timeout)
+  }, [version])
+
+  // 🔥 LOCAL STORAGE LOAD
+  useEffect(() => {
+    const saved = localStorage.getItem("sheet")
+
+    if (saved) {
+      try {
+        const data = JSON.parse(saved)
+
+        data.forEach(({ r, c, value }) => {
+          engine.setCell(r, c, value)
+        })
+
+        forceRerender()
+      } catch {
+        console.log("Corrupted data")
+      }
+    }
+  }, [])
+
+
+  const handleSort = useCallback((col) => {
+    setSortConfig(prev => {
+      if (prev.col !== col) {
+        return { col, order: 'asc' }
+      }
+
+      if (prev.order === 'asc') {
+        return { col, order: 'desc' }
+      }
+
+      return { col: null, order: null }
+    })
+  }, [])
 
   // ────── Cell style helpers ──────
 
@@ -257,9 +323,37 @@ export default function App() {
     ? editValue
     : (selectedCell ? engine.getCell(selectedCell.r, selectedCell.c).raw : '')
 
+
+  const rows = useMemo(() => {
+    return Array.from({ length: engine.rows }, (_, i) => i)
+  }, [engine.rows])
+
+  const filteredRows = useMemo(() => {
+    if (!filterConfig.col) return rows
+
+    return rows.filter((r) => {
+      const val = engine.getCell(r, filterConfig.col).computed
+      return String(val ?? "") === String(filterConfig.value)
+    })
+  }, [rows, filterConfig, engine, version])
+
+  const sortedRows = useMemo(() => {
+    if (!sortConfig.col) return filteredRows
+
+    return [...filteredRows].sort((a, b) => {
+      const valA = parseFloat(engine.getCell(a, sortConfig.col).computed) || 0
+      const valB = parseFloat(engine.getCell(b, sortConfig.col).computed) || 0
+
+      return sortConfig.order === 'asc'
+        ? valA - valB
+        : valB - valA
+    })
+  }, [filteredRows, sortConfig, engine, version])
   // ────── Render ──────
 
   return (
+
+
     <div className="app-wrapper">
       <div className="app-header">
         <h2 className="app-title">📊 Spreadsheet App</h2>
@@ -353,14 +447,44 @@ export default function App() {
               <tr>
                 <th className="col-header-blank"></th>
                 {Array.from({ length: engine.cols }, (_, colIndex) => (
-                  <th key={colIndex} className="col-header">
-                    {getColumnLabel(colIndex)}
+                  <th
+                    key={colIndex}
+                    className="col-header"
+                  >
+                    <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+
+                      {/* Sort click */}
+                      <span
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => handleSort(colIndex)}
+                      >
+                        {getColumnLabel(colIndex)}
+                      </span>
+
+                      {/* Filter dropdown */}
+                      <select
+                        onChange={(e) => {
+                          const value = e.target.value
+                          if (value === "all") {
+                            setFilterConfig({ col: null, value: null })
+                          } else {
+                            setFilterConfig({ col: colIndex, value })
+                          }
+                        }}
+                      >
+                        <option value="all">All</option>
+                        <option value="10">10</option>
+                        <option value="20">20</option>
+                        <option value="5">5</option>
+                      </select>
+
+                    </div>
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {Array.from({ length: engine.rows }, (_, rowIndex) => (
+              {sortedRows.map((rowIndex) => (
                 <tr key={rowIndex}>
                   <td className="row-header">{rowIndex + 1}</td>
                   {Array.from({ length: engine.cols }, (_, colIndex) => {
@@ -371,11 +495,13 @@ export default function App() {
                     const displayValue = cellData.error
                       ? cellData.error
                       : (cellData.computed !== null && cellData.computed !== '' ? String(cellData.computed) : cellData.raw)
-
+                   
                     return (
                       <td
                         key={colIndex}
                         className={`cell ${isSelected ? 'selected' : ''}`}
+                        onCopy={(e) => handleCopy(e, rowIndex, colIndex)}
+                        onPaste={(e) => handlePaste(e, rowIndex, colIndex)}
                         style={{ background: style.bg || 'white' }}
                         onMouseDown={(e) => { e.preventDefault(); handleCellClick(rowIndex, colIndex) }}
                       >
