@@ -1,4 +1,5 @@
 // import { useState, useRef, useCallback, useMemo } from 'react'
+
 import './App.css'
 import { createEngine } from './engine/core.js'
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
@@ -349,6 +350,37 @@ export default function App() {
         : valB - valA
     })
   }, [filteredRows, sortConfig, engine, version])
+
+
+  useEffect(() => {
+    const handleGlobalPaste = (e) => {
+      if (!selectedCell) return
+
+      e.preventDefault()
+
+      const text = e.clipboardData.getData("text")
+      const rows = text.split("\n")
+
+      rows.forEach((row, i) => {
+        const cols = row.trim().split(/\t| +/)
+
+        cols.forEach((value, j) => {
+          const r = selectedCell.r + i
+          const c = selectedCell.c + j
+
+          if (r < engine.rows && c < engine.cols) {
+            engine.setCell(r, c, value)
+          }
+        })
+      })
+
+      forceRerender()
+    }
+
+    window.addEventListener("paste", handleGlobalPaste)
+
+    return () => window.removeEventListener("paste", handleGlobalPaste)
+  }, [selectedCell, engine, forceRerender])
   // ────── Render ──────
 
   return (
@@ -458,7 +490,14 @@ export default function App() {
                         style={{ cursor: 'pointer' }}
                         onClick={() => handleSort(colIndex)}
                       >
-                        {getColumnLabel(colIndex)}
+                        {/* {getColumnLabel(colIndex)} */}
+                        <span onClick={() => handleSort(colIndex)} style={{ cursor: 'pointer' }}>
+                          {getColumnLabel(colIndex)}
+                          {sortConfig.col === colIndex && (
+                            sortConfig.order === 'asc' ? ' 🔼' :
+                              sortConfig.order === 'desc' ? ' 🔽' : ''
+                          )}
+                        </span>
                       </span>
 
                       {/* Filter dropdown */}
@@ -495,13 +534,13 @@ export default function App() {
                     const displayValue = cellData.error
                       ? cellData.error
                       : (cellData.computed !== null && cellData.computed !== '' ? String(cellData.computed) : cellData.raw)
-                   
+
                     return (
                       <td
                         key={colIndex}
                         className={`cell ${isSelected ? 'selected' : ''}`}
                         onCopy={(e) => handleCopy(e, rowIndex, colIndex)}
-                        onPaste={(e) => handlePaste(e, rowIndex, colIndex)}
+                        // onPaste={(e) => handlePaste(e, rowIndex, colIndex)}
                         style={{ background: style.bg || 'white' }}
                         onMouseDown={(e) => { e.preventDefault(); handleCellClick(rowIndex, colIndex) }}
                       >
